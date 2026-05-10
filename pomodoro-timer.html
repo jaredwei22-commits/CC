@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>番茄闹钟 - Pomodoro Timer</title>
+<style>
+  :root {
+    --work: #e74c3c;
+    --break: #2ecc71;
+    --long-break: #3498db;
+    --bg: #1a1a2e;
+    --card: #16213e;
+    --text: #e0e0e0;
+    --muted: #a0a0b0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    user-select: none;
+  }
+  .container {
+    background: var(--card);
+    border-radius: 24px;
+    padding: 40px;
+    width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    text-align: center;
+  }
+  h1 { font-size: 1.4rem; font-weight: 600; color: var(--muted); margin-bottom: 8px; letter-spacing: 2px; }
+
+  .mode-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 28px;
+  }
+  .mode-tab {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .mode-tab.active {
+    background: rgba(255,255,255,0.1);
+    color: var(--text);
+  }
+  .mode-tab:hover:not(.active) { color: var(--text); }
+
+  .timer-ring {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    margin: 0 auto 24px;
+  }
+  .ring-bg {
+    fill: none;
+    stroke: rgba(255,255,255,0.08);
+    stroke-width: 8;
+  }
+  .ring-progress {
+    fill: none;
+    stroke: var(--work);
+    stroke-width: 8;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.3s linear, stroke 0.3s;
+  }
+  .ring-progress.break { stroke: var(--break); }
+  .ring-progress.long-break { stroke: var(--long-break); }
+
+  .timer-text {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3.8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+  }
+  .session-label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: -16px;
+    margin-bottom: 20px;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+  .btn {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn-start {
+    background: var(--work);
+    color: #fff;
+    min-width: 120px;
+  }
+  .btn-start:hover { filter: brightness(1.1); }
+  .btn-start.pause { background: #f39c12; }
+  .btn-reset {
+    background: rgba(255,255,255,0.08);
+    color: var(--text);
+  }
+  .btn-reset:hover { background: rgba(255,255,255,0.14); }
+
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .stats span { font-weight: 700; color: var(--text); font-size: 1.1rem; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>🍅 番茄闹钟</h1>
+
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="work">专注 25 分钟</button>
+    <button class="mode-tab" data-mode="break">休息 5 分钟</button>
+    <button class="mode-tab" data-mode="long-break">长休 15 分钟</button>
+  </div>
+
+  <div class="timer-ring">
+    <svg width="260" height="260" viewBox="0 0 260 260">
+      <circle class="ring-bg" cx="130" cy="130" r="120"/>
+      <circle class="ring-progress" id="ring" cx="130" cy="130" r="120"
+              stroke-dasharray="753.98" stroke-dashoffset="0"/>
+    </svg>
+    <div class="timer-text" id="timer">25:00</div>
+  </div>
+
+  <div class="session-label" id="label">准备开始专注 💪</div>
+
+  <div class="btn-row">
+    <button class="btn btn-start" id="btnStart" onclick="toggleTimer()">开始</button>
+    <button class="btn btn-reset" onclick="resetTimer()">重置</button>
+  </div>
+
+  <div class="stats">
+    <div>今日完成<br><span id="count">0</span> 个番茄</div>
+    <div>总专注<br><span id="totalMin">0</span> 分钟</div>
+  </div>
+</div>
+
+<script>
+const CIRCUMFERENCE = 2 * Math.PI * 120; // ~753.98
+const MODES = {
+  work:    { label: '专注', next: 'break', minutes: 25, color: 'work' },
+  break:   { label: '休息', next: 'work', minutes: 5,  color: 'break' },
+  'long-break': { label: '长休', next: 'work', minutes: 15, color: 'long-break' },
+};
+
+let mode = 'work';
+let timeLeft = MODES[mode].minutes * 60;
+let totalSeconds = timeLeft;
+let timerId = null;
+let running = false;
+let pomodoroCount = parseInt(localStorage.getItem('pomo_count') || '0');
+let totalFocusMin = parseInt(localStorage.getItem('pomo_total_min') || '0');
+
+const ring = document.getElementById('ring');
+const timerEl = document.getElementById('timer');
+const labelEl = document.getElementById('label');
+const btnStart = document.getElementById('btnStart');
+const countEl = document.getElementById('count');
+const totalMinEl = document.getElementById('totalMin');
+const tabs = document.querySelectorAll('.mode-tab');
+
+function updateDisplay() {
+  const m = Math.floor(timeLeft / 60);
+  const s = timeLeft % 60;
+  timerEl.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  const frac = timeLeft / totalSeconds;
+  ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - frac);
+  document.title = timerEl.textContent + ' - 番茄闹钟';
+}
+
+function updateRingColor() {
+  ring.classList.remove('break', 'long-break');
+  if (mode === 'break') ring.classList.add('break');
+  if (mode === 'long-break') ring.classList.add('long-break');
+}
+
+function setMode(m) {
+  if (running) return;
+  mode = m;
+  timeLeft = MODES[m].minutes * 60;
+  totalSeconds = timeLeft;
+  updateRingColor();
+  updateDisplay();
+  labelEl.textContent = '准备开始' + MODES[m].label + ' 💪';
+  btnStart.textContent = '开始';
+  btnStart.classList.remove('pause');
+  tabs.forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-mode="${m}"]`).classList.add('active');
+}
+
+function toggleTimer() {
+  if (running) {
+    clearInterval(timerId);
+    running = false;
+    btnStart.textContent = '继续';
+    btnStart.classList.remove('pause');
+    labelEl.textContent = '已暂停 ⏸️';
+  } else {
+    running = true;
+    btnStart.textContent = '暂停';
+    btnStart.classList.add('pause');
+    labelEl.textContent = '正在' + MODES[mode].label + '... 🕒';
+    timerId = setInterval(() => {
+      timeLeft--;
+      updateDisplay();
+      if (timeLeft <= 0) {
+        clearInterval(timerId);
+        running = false;
+        onComplete();
+      }
+    }, 1000);
+  }
+}
+
+function resetTimer() {
+  clearInterval(timerId);
+  running = false;
+  timeLeft = MODES[mode].minutes * 60;
+  totalSeconds = timeLeft;
+  updateDisplay();
+  btnStart.textContent = '开始';
+  btnStart.classList.remove('pause');
+  labelEl.textContent = '准备开始' + MODES[mode].label + ' 💪';
+}
+
+function onComplete() {
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  [800, 600, 900].forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.value = 0.15;
+    osc.start(audioCtx.currentTime + i * 0.2);
+    osc.stop(audioCtx.currentTime + i * 0.2 + 0.3);
+  });
+
+  if (Notification.permission === 'granted') {
+    new Notification('🍅 时间到！', { body: MODES[mode].label + '结束，请休息一下' });
+  }
+
+  if (mode === 'work') {
+    pomodoroCount++;
+    totalFocusMin += MODES.work.minutes;
+    localStorage.setItem('pomo_count', pomodoroCount);
+    localStorage.setItem('pomo_total_min', totalFocusMin);
+    countEl.textContent = pomodoroCount;
+    totalMinEl.textContent = totalFocusMin;
+  }
+
+  // auto-switch to next mode
+  const next = MODES[mode].next;
+  setMode(next);
+  labelEl.textContent = MODES[mode].label + '结束！点击开始' + MODES[next].label + ' 🎉';
+}
+
+tabs.forEach(t => t.addEventListener('click', () => setMode(t.dataset.mode)));
+
+// Init
+updateRingColor();
+updateDisplay();
+countEl.textContent = pomodoroCount;
+totalMinEl.textContent = totalFocusMin;
+
+// Request notification permission
+if ('Notification' in window && Notification.permission === 'default') {
+  document.addEventListener('click', () => Notification.requestPermission(), { once: true });
+}
+</script>
+</body>
+</html>
